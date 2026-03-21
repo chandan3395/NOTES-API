@@ -68,3 +68,46 @@ exports.loginUser = async (req,res) => {
         return res.status(500).json({message: "Server error"}) ;
     }
 }
+
+exports.refreshAccessToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken)
+            return res.status(400).json({ message: "Refresh token required" });
+
+        // Verify the token signature and expiry
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+        // Check if the hashed version exists in DB
+        const hashed = hashToken(refreshToken);
+        const stored = await RefreshToken.findOne({ token: hashed, user: decoded.id });
+
+        if (!stored)
+            return res.status(401).json({ message: "Invalid or expired refresh token" });
+
+        // Issue a new access token
+        const user = await User.findById(decoded.id);
+        const newAccessToken = generateAccessToken(user);
+
+        res.status(200).json({ accessToken: newAccessToken });
+
+    } catch (error) {
+        return res.status(401).json({ message: "Refresh token invalid or expired" });
+    }
+};
+
+exports.logoutUser = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken)
+            return res.status(400).json({ message: "Refresh token required" });
+
+        // Delete hashed token from DB → session is now dead
+        await RefreshToken.deleteOne({ token: hashToken(refreshToken) });
+
+        res.status(200).json({ message: "Logged out successfully" });
+
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+};

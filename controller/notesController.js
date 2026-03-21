@@ -1,10 +1,24 @@
-// @desc create a note
-// @POST /notes
-// @access private
 const Note = require("../models/note");
 const User = require("../models/User");
 const asyncHandler = require("../middleware/asyncHandler");
+const redisClient = require("../config/redisClient") ;
 
+// helper: builds a unique cache key per user + their query params 
+const getCacheKey = (userId, query) => {
+    const {limit, cursor, search } = query ;
+    return `notes: ${userId}:${limit || 5}:${cursor || "start"}:${search || ""} ` ;
+};
+
+// cache invalidation: 
+const invalidateUserCache = async (userId) => {
+    const keys = await redisClient.keys(`notes:${userId}:*`);
+    if (keys.length > 0) 
+        await redisClient.del(keys);
+};
+
+// @desc create a note
+// @POST /notes
+// @access private
 exports.createNote = asyncHandler (async (req,res) => {
         const {title,content} = req.body ;
 
@@ -17,6 +31,8 @@ exports.createNote = asyncHandler (async (req,res) => {
             user: req.user.id
         });
 
+        await invalidateUserCache(req.user.id) ;
+
         return res.status(201).json(note) ;
 });
 
@@ -28,14 +44,21 @@ exports.getNotes = asyncHandler (async (req, res) => {
         const cursor = req.query.cursor;
         const search = req.query.search || "";
 
-        const filter = {};
+        const cacheKey = getCacheKey(req.user.id, req.query) ;
 
+        // 1. check redis first 
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+            return res.status(200).json(JSON.parse(cached));
+        }
+
+        // 2. Cache miss → query MongoDB
+        const filter = {};
         // if(admin) --> filter = {} ; 
         // if(!admin) --> filter = {user.id} ;
         if(req.user.role !== "admin"){
             filter.user = req.user.id ;
         }
-
         // Search logic
         if (search) {
             filter.$or = [
@@ -43,7 +66,6 @@ exports.getNotes = asyncHandler (async (req, res) => {
                 { content: { $regex: search, $options: "i" } }
             ];
         }
-
         // Cursor logic
         if (cursor) {
             filter._id = { $lt: cursor };
@@ -57,6 +79,9 @@ exports.getNotes = asyncHandler (async (req, res) => {
         const nextCursor = notes.length === limit
             ? notes[notes.length - 1]._id
             : null;
+        
+        // 3. Store in Redis with a 60 second TTL
+        await redisClient.setEx(cacheKey, 60, JSON.stringify(result));
 
         res.status(200).json({
             count: notes.length,
@@ -86,6 +111,9 @@ exports.updateNote = asyncHandler( async (req,res) => {
 
         const updatedNote = await note.save();
 
+        // note changed → invalidate cache
+        await invalidateUserCache(req.user.id);
+
         return res.status(200).json(updatedNote);
 });
 
@@ -94,8 +122,11 @@ exports.updateNote = asyncHandler( async (req,res) => {
 // @access private 
 exports.deleteNote = asyncHandler( async (req,res) => {
         const note = req.note ;
-
         await note.deleteOne() ;
+
+        // note deleted → invalidate cache
+        await invalidateUserCache(req.user.id);
+
         return res.status(200).json({message : "deleted note succesfully"});
 });
 
