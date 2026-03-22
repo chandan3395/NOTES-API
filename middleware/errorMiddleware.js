@@ -1,6 +1,6 @@
 const errorHandler = (err, req, res, next) => {
     // developer needs err message in the console to debug the error
-    console.error(err);
+    logger.error(err);
 
     // If developer already defined error status → use it
     // Else → treat as server error (500)

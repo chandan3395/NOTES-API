@@ -3,11 +3,18 @@ require("dotenv").config();
 // imports must come before use and app initialization
 const express = require("express");
 const cors = require("cors");
-const mongoose = require("mongoose");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const morgan = require("morgan") ;
+const logger = require("./utils/logger") ;
 
 const app = express();   // create app before applying middleware
+
+app.use(morgan("combined", {
+  stream: {
+    write: (message) => logger.info(message.trim()) 
+  }
+}));
 
 // CORS configuration
 app.use(
@@ -20,16 +27,6 @@ app.use(
 
 // JSON body --> req.body
 app.use(express.json());
-
-// connects to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => {
-    console.error("MongoDB connection failed:", err);
-    process.exit(1);          // or retry logic
-  });
-
 
 const authRoutes = require("./routes/authRoutes");
 const notesRoutes = require("./routes/notesRoutes");
@@ -65,5 +62,5 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000 ;
 
 app.listen(PORT,() =>{
-    console.log(`Server running on port ${PORT}`) ;
+    logger.info(`Server running on port ${PORT}`) ;
 }) ;
