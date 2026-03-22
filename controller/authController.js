@@ -1,6 +1,10 @@
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken") ;
+const generateAccessToken = require("../utils/generateAccessToken") ;
+const generateRefreshToken = require("../utils/generateRefreshToken") ;
+const hashToken = require("../utils/hashToken") ;
+
 
 exports.registerUser = async (req, res) => {
     try {

@@ -22,9 +22,14 @@ app.use(
 app.use(express.json());
 
 // connects to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log("MongoDB Connected"))
-    .catch(err => console.log(err));
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch(err => {
+    console.error("MongoDB connection failed:", err);
+    process.exit(1);          // or retry logic
+  });
+
 
 const authRoutes = require("./routes/authRoutes");
 const notesRoutes = require("./routes/notesRoutes");
