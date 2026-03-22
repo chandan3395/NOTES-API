@@ -138,8 +138,3 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# env file 
-.env 
-
-# node_modules
-node_modules
