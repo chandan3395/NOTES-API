@@ -4,6 +4,11 @@ const jwt = require("jsonwebtoken") ;
 const generateAccessToken = require("../utils/generateAccessToken") ;
 const generateRefreshToken = require("../utils/generateRefreshToken") ;
 const hashToken = require("../utils/hashToken") ;
+const RefreshToken = require("../models/RefreshToken") ;
+const crypto = require("crypto") ;
+const sendEmail = require("../utils/sendEmail") ;
+const PasswordResetToken = require("../models/PasswordResetToken") ;
+const logger = require("../utils/logger") ;
 
 
 exports.registerUser = async (req, res) => {
@@ -59,13 +64,16 @@ exports.loginUser = async (req,res) => {
             return res.status(400).json({message: "did not match"}) ;
         }
 
-        const token = jwt.sign(
-            {id: user._id},
-            process.env.JWT_SECRET,
-            {expiresIn: "1h"}
-        );
+        const accessToken = generateAccessToken() ;
+        const refreshToken = generateRefreshToken() ;
 
-        res.status(200).json({message: "Login succesfull",token}) ;
+        await RefreshToken.create({
+            user: user.id, 
+            token: hashToken(refreshToken),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        }) ;
+
+        res.status(200).json({message: "Login succesfull",accessToken, refreshToken}) ;
 
     }catch(error){
         console.log("LOGIN ERROR: ",error) ;
@@ -115,3 +123,84 @@ exports.logoutUser = async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 };
+
+// @desc Send password reset link to user's mail
+// @route POST /auth/forgot-password
+// @access public
+exports.forgotPassword = async (req,res) => {
+    try{
+        const { email } = email ;
+        if(!email)
+            return res.status(400).json({message: "Email is required"}) ;
+        
+        const user = await user.findOne({email}) ;
+        
+        // no matter if the user is not there or not we have send the same response
+        // why?? --> if some stalker gets to know some of the real user's email id then problem may arise that's why
+        // we have to send the same response in both cases of user existing or not
+        if(!user)
+            return res.status(200).json({ message: "if the mail exists, a reset link has been sent out successfully"});
+        
+        // creating a new token --> this is what goes in the email URL
+        const rawToken = crypto.randomBytes(32).toString("hex") ;
+
+        // Delete any existing token of the user --> which is only one at a time
+        await PasswordResetToken.deleteOne({user: user._id}) ;
+
+        await PasswordResetToken.create({
+            user: user._id,
+            token: hashToken(rawToken) 
+        }) ;
+
+        const resetLink = `${process.env.CLIENT_URL} / reset-password?token=${rawToken}&id=${user._id}`
+
+        await sendEmail({
+            to: user.email,
+            subject: "Password Reset Request",
+            html: `
+                <h2>Password Reset</h2>
+                <p>You requested a password reset. Click the link below:</p>
+                <a href="${resetLink}">Reset My Password</a>
+                <p>This link expires in 15 minutes.</p>
+                <p>If you didn't request this, ignore this email.</p>
+            `
+        });
+
+        res.status(200).json({ message: "if the mail exists, a reset link has been sent out successfully"});
+    }catch (err) {
+        logger.error(`Forgot password error: ${error.message}`) ;
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// @desc Reset the user's password using the token from email 
+// @route POST /auth/reset-password
+// @access public
+exports.resetPassword = async (req,res) => {
+    try{ 
+        const { token, userId, newPassword } = req.body;
+        if (!token || !userId || !newPassword)
+            return res.status(400).json({ message: "All fields required" });
+
+         // Find the stored token record by hashing the incoming raw token
+        const stored = await PasswordResetToken.findOne({
+            user: userId,
+            token: hashToken(token)   // hash and compare — same pattern as refresh tokens
+        });
+
+        if (!stored)
+            return res.status(400).json({ message: "Invalid or expired reset token" });
+
+        // Token is valid — update the user's password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await User.findByIdAndUpdate(userId, { password: hashedPassword });
+
+        // Delete the reset token — one-time use only
+        await PasswordResetToken.deleteOne({ _id: stored._id });
+
+        res.status(200).json({ message: "Password reset successful" });
+    }catch (error) {
+        logger.error(`Reset password error: ${error.message}`);
+        res.status(500).json({ message: "Server error" });
+    }
+}
