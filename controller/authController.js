@@ -144,7 +144,7 @@ exports.forgotPassword = async (req,res) => {
         // creating a new token --> this is what goes in the email URL
         const rawToken = crypto.randomBytes(32).toString("hex") ;
 
-        // Delete any existing token of the user --> which is only one at a time
+        // Delete any existing reset tokens for this user (only one active at a time)
         await PasswordResetToken.deleteOne({user: user._id}) ;
 
         await PasswordResetToken.create({

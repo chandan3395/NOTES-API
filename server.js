@@ -59,6 +59,9 @@ app.use("/notes", notesRoutes);
 const errorHandler = require("./middleware/errorMiddleware");
 app.use(errorHandler);
 
+const userRoutes = require("./routes/userRoutes");
+app.use("/users", userRoutes);
+
 const PORT = process.env.PORT || 3000 ;
 
 app.listen(PORT,() =>{

@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema(
         type: String,
         enum: ["user", "admin"],
         default: "user"
+    },
+    avatar: {
+    type: String,
+    default: null  // null means no avatar uploaded yet
     }
 },
 { timestamps: true } // when the user is created date and time 
